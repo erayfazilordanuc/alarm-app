@@ -7,26 +7,35 @@ import * as Notifications from "expo-notifications";
 import { router, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useColorScheme as useSystemColorScheme } from "react-native";
 import "react-native-reanimated";
 import "../global.css";
 
+import { PermissionRequest } from "@/components/PermissionRequest";
 import { useSettingsStore } from "@/store/settings";
 
 export const unstable_settings = {
   anchor: "(tabs)",
 };
 
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+
 export default function RootLayout() {
   const systemColorScheme = useSystemColorScheme();
-  const { theme } = useSettingsStore();
+  const { theme, setDevMode } = useSettingsStore();
   const { setColorScheme } = useColorScheme();
+  const [permissionModalVisible, setPermissionModalVisible] = useState(true);
 
   // Determine effective theme
   const effectiveTheme = theme === "auto" ? systemColorScheme : theme;
 
   const isDark = effectiveTheme === "dark";
+
+  // Reset developer mode on app start
+  useEffect(() => {
+    setDevMode(false);
+  }, []);
 
   // Set NativeWind color scheme
   useEffect(() => {
@@ -68,6 +77,18 @@ export default function RootLayout() {
         }
       });
 
+    // Check for Android Full Screen Intent Trigger
+    import("@/lib/alarm-service").then(({ getTriggeredAlarm }) => {
+      getTriggeredAlarm().then((alarmId) => {
+        if (alarmId) {
+          router.push({
+            pathname: "/alarm-ringing",
+            params: { alarmId },
+          });
+        }
+      });
+    });
+
     return () => {
       subscription.remove();
       responseSubscription.remove();
@@ -78,15 +99,21 @@ export default function RootLayout() {
   // Removed in favor of contextual check in AddAlarmModal
 
   return (
-    <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="modal"
-          options={{ presentation: "modal", title: "Modal" }}
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="modal"
+            options={{ presentation: "modal", title: "Modal" }}
+          />
+        </Stack>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <PermissionRequest
+          visible={permissionModalVisible}
+          onClose={() => setPermissionModalVisible(false)}
         />
-      </Stack>
-      <StatusBar style={isDark ? "light" : "dark"} />
-    </ThemeProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

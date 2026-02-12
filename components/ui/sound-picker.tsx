@@ -57,7 +57,7 @@ export default function SoundPicker({
         <Pressable className="flex-1" onPress={onClose} />
 
         <Animated.View
-          entering={SlideInDown.springify().damping(20).stiffness(90)}
+          entering={SlideInDown.springify().damping(250).stiffness(500)}
           exiting={SlideOutDown}
           className="bg-white dark:bg-[#1C1C1E] rounded-t-[32px] overflow-hidden max-h-[70%]"
         >

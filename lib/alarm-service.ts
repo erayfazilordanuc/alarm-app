@@ -1,4 +1,8 @@
-import { NativeModules } from "react-native";
+import { NotificationManager } from "@/lib/notification-manager";
+import { NativeModules, Platform } from "react-native";
+
+// App identifier to distinguish our alarms from system/other app alarms
+export const APP_IDENTIFIER = "com.alarmai.mobile.alarm";
 
 // Use a simple random ID generator instead of uuid to avoid dependencies
 const uuidv4 = () => {
@@ -15,61 +19,169 @@ export async function scheduleAlarm(alarm: any) {
   if (!(alarm instanceof Alarm)) {
     alarm = new Alarm(alarm);
   }
-  await AlarmService.set(alarm.toAndroid());
+
+  if (Platform.OS === "android") {
+    await AlarmService.set(alarm.toAndroid());
+  } else {
+    await NotificationManager.scheduleAlarm(alarm);
+  }
   console.log("scheduling alarm: ", JSON.stringify(alarm));
 }
 
 export async function enableAlarm(uid: string) {
-  await AlarmService.enable(uid);
+  if (Platform.OS === "android") {
+    await AlarmService.enable(uid);
+  } else {
+    // iOS: Re-schedule if needed, or handled by store logic re-scheduling
+  }
 }
 
 export async function disableAlarm(uid: string) {
-  await AlarmService.disable(uid);
+  if (Platform.OS === "android") {
+    await AlarmService.disable(uid);
+  } else {
+    await NotificationManager.cancelAlarmNotifications(uid);
+  }
 }
 
 export async function stopAlarm() {
-  await AlarmService.stop();
-}
-
-export async function snoozeAlarm() {
-  await AlarmService.snooze();
+  if (Platform.OS === "android") {
+    await AlarmService.stop();
+  } else {
+    // On iOS, stopping typically means cancelling the notification sound?
+    // Or user taps notification.
+    // There is no programmatic "stop sound" for local notifications once firing unless we open app.
+  }
 }
 
 export async function removeAlarm(uid: string) {
-  await AlarmService.remove(uid);
+  if (Platform.OS === "android") {
+    await AlarmService.remove(uid);
+  } else {
+    await NotificationManager.cancelAlarmNotifications(uid);
+  }
 }
 
 export async function updateAlarm(alarm: any) {
   if (!(alarm instanceof Alarm)) {
     alarm = new Alarm(alarm);
   }
-  await AlarmService.update(alarm.toAndroid());
+  if (Platform.OS === "android") {
+    await AlarmService.update(alarm.toAndroid());
+  } else {
+    // iOS: Cancel and Schedule
+    await removeAlarm(alarm.uid);
+    await scheduleAlarm(alarm);
+  }
 }
 
 export async function removeAllAlarms() {
-  await AlarmService.removeAll();
+  if (Platform.OS === "android") {
+    // Only remove alarms created by this app
+    await AlarmService.removeAll(APP_IDENTIFIER);
+  } else {
+    await NotificationManager.cancelAll();
+  }
 }
 
 export async function getAllAlarms() {
-  const alarms = await AlarmService.getAll();
-  return alarms.map((a: any) => Alarm.fromAndroid(a));
+  if (Platform.OS === "android") {
+    const alarms = await AlarmService.getAll();
+    // Filter to only return alarms created by this app
+    return alarms
+      .map((a: any) => Alarm.fromAndroid(a))
+      .filter((alarm: Alarm) => alarm.appIdentifier === APP_IDENTIFIER);
+  } else {
+    return []; // iOS doesn't persist alarms in native layer, relies on Store/JS
+  }
 }
 
 export async function getAlarm(uid: string) {
-  const alarm = await AlarmService.get(uid);
-  return Alarm.fromAndroid(alarm);
+  if (Platform.OS === "android") {
+    const alarm = await AlarmService.get(uid);
+    return Alarm.fromAndroid(alarm);
+  } else {
+    return null;
+  }
 }
 
 export async function getAlarmState() {
-  return AlarmService.getState();
+  if (Platform.OS === "android") {
+    return AlarmService.getState();
+  } else {
+    return "unknown";
+  }
 }
 
 export async function checkExactAlarmPermission(): Promise<boolean> {
-  return AlarmService.checkExactAlarmPermission();
+  if (Platform.OS === "android") {
+    return AlarmService.checkExactAlarmPermission();
+  }
+  return true;
 }
 
 export async function requestExactAlarmPermission(): Promise<boolean> {
-  return AlarmService.requestExactAlarmPermission();
+  if (Platform.OS === "android") {
+    return AlarmService.requestExactAlarmPermission();
+  }
+  return true;
+}
+
+export async function checkFullScreenPermission(): Promise<boolean> {
+  if (Platform.OS === "android") {
+    return AlarmService.checkFullScreenPermission();
+  }
+  return true;
+}
+
+export async function requestFullScreenPermission(): Promise<boolean> {
+  if (Platform.OS === "android") {
+    return AlarmService.requestFullScreenPermission();
+  }
+  return true;
+}
+
+export async function checkBatteryOptimization(): Promise<boolean> {
+  if (Platform.OS === "android") {
+    return AlarmService.checkBatteryOptimization();
+  }
+  return true;
+}
+
+export async function requestBatteryOptimization(): Promise<boolean> {
+  if (Platform.OS === "android") {
+    return AlarmService.requestBatteryOptimization();
+  }
+  return true;
+}
+
+export async function getTriggeredAlarm(): Promise<string | null> {
+  if (Platform.OS === "android") {
+    return AlarmService.getTriggeredAlarm();
+  }
+  return null;
+}
+
+export async function snoozeAlarm(alarmId?: string) {
+  // 1. Stop the current alarm sound/service
+  await stopAlarm();
+
+  // 2. Schedule a new alarm for 9 minutes later
+  const snoozeTime = new Date();
+  snoozeTime.setMinutes(snoozeTime.getMinutes() + 9);
+
+  const snoozeAlarm: Alarm = new Alarm({
+    title: "Snoozed Alarm",
+    hour: snoozeTime.getHours(),
+    minutes: snoozeTime.getMinutes(),
+    enabled: true,
+    active: true,
+    vibration: true,
+    sound: "default",
+    days: [snoozeTime.getDay()], // Daily alarm for today's day (handled as one-off logic essentially)
+  });
+
+  await scheduleAlarm(snoozeAlarm);
 }
 
 export default class Alarm {
@@ -85,6 +197,14 @@ export default class Alarm {
   days: number[];
   sound: string;
   vibration: boolean;
+  appIdentifier: string;
+  // id alias for compatibility with Store interface if needed, but Store uses 'id' and passes it as 'uid' in helper
+  get id() {
+    return this.uid;
+  }
+  get time() {
+    return `${this.hour < 10 ? "0" : ""}${this.hour}:${this.minutes < 10 ? "0" : ""}${this.minutes}`;
+  }
 
   constructor(params: any = null) {
     this.uid = getParam(params, "uid", uuidv4());
@@ -99,6 +219,7 @@ export default class Alarm {
     this.days = getParam(params, "days", [new Date().getDay()]);
     this.sound = getParam(params, "sound", "default");
     this.vibration = getParam(params, "vibration", true);
+    this.appIdentifier = getParam(params, "appIdentifier", APP_IDENTIFIER);
   }
 
   static getEmpty() {

@@ -10,9 +10,11 @@ interface SettingsState {
   language: Language;
   theme: Theme;
   themeColor: ThemeColorName;
+  devMode: boolean;
   setLanguage: (language: Language) => void;
   setTheme: (theme: Theme) => void;
   setThemeColor: (color: ThemeColorName) => void;
+  setDevMode: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -21,9 +23,11 @@ export const useSettingsStore = create<SettingsState>()(
       language: "tr",
       theme: "auto",
       themeColor: "blue",
+      devMode: false,
       setLanguage: (language) => set({ language }),
       setTheme: (theme) => set({ theme }),
       setThemeColor: (themeColor) => set({ themeColor }),
+      setDevMode: (devMode) => set({ devMode }),
     }),
     {
       name: "app-settings",

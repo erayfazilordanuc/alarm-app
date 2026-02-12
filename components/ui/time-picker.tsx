@@ -1,13 +1,20 @@
 import { getThemeColors, ThemeColorName } from "@/lib/color-system";
-import React, { useCallback, useRef, useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   FlatList,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  StyleSheet,
   Text,
   useColorScheme,
   View,
 } from "react-native";
+
+// --- AYARLAR ---
+const ITEM_HEIGHT = 48; // Satır yüksekliği
+const VISIBLE_ITEMS = 5; // Görünür satır sayısı
+const CONTAINER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS; // 240px
+const HALF_HEIGHT = (CONTAINER_HEIGHT - ITEM_HEIGHT) / 2; // Padding hesabı
 
 interface TimePickerProps {
   date: Date;
@@ -15,19 +22,49 @@ interface TimePickerProps {
   themeColor: ThemeColorName;
 }
 
-// AYARLAR
-const ITEM_HEIGHT = 50;
-const CONTAINER_HEIGHT = 192; 
-
-// (192 - 50) / 2 = 71px
-// Bu boşluk listenin en başına ve en sonuna eklenecek.
-const SPACER_HEIGHT = (CONTAINER_HEIGHT - ITEM_HEIGHT) / 2;
-
 const HOURS = Array.from({ length: 24 }, (_, i) =>
-  i.toString().padStart(2, "0")
+  i.toString().padStart(2, "0"),
 );
 const MINUTES = Array.from({ length: 60 }, (_, i) =>
-  i.toString().padStart(2, "0")
+  i.toString().padStart(2, "0"),
+);
+
+const PickerItem = React.memo(
+  ({
+    item,
+    isSelected,
+    activeColor,
+  }: {
+    item: string;
+    isSelected: boolean;
+    activeColor: string;
+  }) => {
+    return (
+      <View style={styles.itemContainer}>
+        <Text
+          style={[
+            styles.itemText,
+            isSelected
+              ? {
+                  color: activeColor,
+                  fontWeight: "600",
+                  fontSize: 20,
+                  opacity: 1,
+                }
+              : {
+                  color: "#A1A1AA",
+                  fontWeight: "400",
+                  fontSize: 17,
+                  opacity: 0.4,
+                },
+            { fontVariant: ["tabular-nums"] },
+          ]}
+        >
+          {item}
+        </Text>
+      </View>
+    );
+  },
 );
 
 const TimePicker = React.memo(
@@ -36,160 +73,225 @@ const TimePicker = React.memo(
     const isDark = colorScheme === "dark";
     const colors = getThemeColors(themeColor, isDark);
 
-    // Listelerin referanslarını tutalım (Gerekirse manuel kaydırmak için)
     const hourListRef = useRef<FlatList>(null);
     const minuteListRef = useRef<FlatList>(null);
-
-    const renderItem = useCallback(
-      ({ item, selectedValue }: { item: string; selectedValue: string }) => {
-        const isSelected = item === selectedValue;
-
-        return (
-          <View
-            style={{
-              height: ITEM_HEIGHT,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <Text
-              className={`text-3xl font-light ${
-                isSelected
-                  ? "text-black dark:text-white font-semibold"
-                  : "text-gray-300 dark:text-zinc-700"
-              }`}
-              style={[
-                isSelected ? { color: colors.main } : {},
-                { fontVariant: ["tabular-nums"], includeFontPadding: false },
-              ]}
-            >
-              {item}
-            </Text>
-          </View>
-        );
-      },
-      [colors.main]
-    );
 
     const handleScroll = useCallback(
       (
         event: NativeSyntheticEvent<NativeScrollEvent>,
         data: string[],
-        type: "hour" | "minute"
+        type: "hour" | "minute",
       ) => {
         const offsetY = event.nativeEvent.contentOffset.y;
-        
-        // Header kullandığımız için offset 0 iken ilk eleman tam ortadadır.
         let index = Math.round(offsetY / ITEM_HEIGHT);
-
-        // Sınırları koru
         index = Math.max(0, Math.min(index, data.length - 1));
 
         const value = parseInt(data[index], 10);
-        const newDate = new Date(date);
+        const currentDateVal =
+          type === "hour" ? date.getHours() : date.getMinutes();
 
-        if (type === "hour") {
-          newDate.setHours(value);
-        } else {
-          newDate.setMinutes(value);
-        }
+        if (currentDateVal === value) return;
+
+        const newDate = new Date(date);
+        if (type === "hour") newDate.setHours(value);
+        else newDate.setMinutes(value);
+
         onDateChange(newDate);
       },
-      [date, onDateChange]
+      [date, onDateChange],
     );
 
-    // Başlangıç pozisyonuna gitmek için useEffect kullanıyoruz.
-    // getItemLayout olmadığı için initialScrollIndex bazen sapıtabilir, 
-    // bu yüzden manuel tetikleme en garantisidir.
-    useEffect(() => {
-        // Ufak bir gecikme listenin render olmasını bekler
-        setTimeout(() => {
-            hourListRef.current?.scrollToIndex({ index: date.getHours(), animated: false });
-            minuteListRef.current?.scrollToIndex({ index: date.getMinutes(), animated: false });
-        }, 100);
-    }, []); // Sadece mount olduğunda çalışır
+    const getItemLayout = useCallback(
+      (_: any, index: number) => ({
+        length: ITEM_HEIGHT,
+        offset: ITEM_HEIGHT * index,
+        index,
+      }),
+      [],
+    );
 
-    // Boşluk Bileşeni
-    const renderSpacer = () => <View style={{ height: SPACER_HEIGHT }} />;
+    const onScrollToIndexFailed = useCallback(() => {
+      // Fail safe: sessizce geç
+    }, []);
+
+    useEffect(() => {
+      // Only scroll if we are not currently interacting (optional optimization, but for now simple sync)
+      // Actually, since onDateChange only happens on momentum end, we are safe.
+
+      // We use a small timeout to allow layout to settle if needed, or just immediate.
+      // Given the issues, let's keep it safe.
+      requestAnimationFrame(() => {
+        if (!hourListRef.current || !minuteListRef.current) return;
+
+        hourListRef.current.scrollToIndex({
+          index: date.getHours(),
+          animated: false,
+        });
+        minuteListRef.current.scrollToIndex({
+          index: date.getMinutes(),
+          animated: false,
+        });
+      });
+    }, [date.getHours(), date.getMinutes()]); // Depend on values, not object ref if possible, but date object is new every time usually.
+
+    const commonListProps = {
+      snapToInterval: ITEM_HEIGHT,
+      decelerationRate: "fast" as "fast",
+      showsVerticalScrollIndicator: false,
+      bounces: false,
+      getItemLayout: getItemLayout,
+      onScrollToIndexFailed: onScrollToIndexFailed,
+      contentContainerStyle: { paddingVertical: HALF_HEIGHT },
+      maxToRenderPerBatch: 10,
+      initialNumToRender: 10,
+      windowSize: 5,
+    };
 
     return (
-      <View 
-        className="flex-row justify-center bg-gray-50 dark:bg-zinc-900/50 rounded-3xl overflow-hidden relative"
-        style={{ height: CONTAINER_HEIGHT }}
+      <View
+        style={[
+          styles.container,
+          {
+            height: CONTAINER_HEIGHT,
+            backgroundColor: isDark ? "rgba(24, 24, 27, 0.5)" : "#FAFAFA",
+          },
+        ]}
       >
-        {/* Seçim Çubuğu (Overlay) */}
+        {/* --- SEÇİM GÖSTERGESİ (OVERLAY) --- */}
         <View
-          className="absolute w-full bg-gray-200/50 dark:bg-zinc-800/50"
+          style={[
+            styles.selectionOverlay,
+            {
+              top: HALF_HEIGHT,
+              height: ITEM_HEIGHT,
+              borderColor: isDark
+                ? "rgba(255,255,255,0.1)"
+                : "rgba(0,0,0,0.05)",
+              backgroundColor: isDark
+                ? "rgba(255,255,255,0.03)"
+                : "rgba(0,0,0,0.02)",
+            },
+          ]}
           pointerEvents="none"
-          style={{
-            height: ITEM_HEIGHT,
-            top: SPACER_HEIGHT,
-          }}
         />
 
-        {/* SAAT LİSTESİ */}
-        <View className="w-20 items-center">
-          <FlatList
-            ref={hourListRef}
-            data={HOURS}
-            keyExtractor={(item) => `h-${item}`}
-            renderItem={({ item }) =>
-              renderItem({
-                item,
-                selectedValue: date.getHours().toString().padStart(2, "0"),
-              })
-            }
-            snapToInterval={ITEM_HEIGHT}
-            decelerationRate="fast"
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-            onMomentumScrollEnd={(e) => handleScroll(e, HOURS, "hour")}
-            ListHeaderComponent={renderSpacer}
-            ListFooterComponent={renderSpacer}
-            // getItemLayout KALDIRILDI!
-          />
-        </View>
+        <View style={styles.row}>
+          {/* Saat */}
+          <View style={styles.column}>
+            <FlatList
+              ref={hourListRef}
+              data={HOURS}
+              keyExtractor={(item) => `h-${item}`}
+              renderItem={({ item }) => (
+                <PickerItem
+                  item={item}
+                  isSelected={
+                    item === date.getHours().toString().padStart(2, "0")
+                  }
+                  activeColor={colors.main}
+                />
+              )}
+              onMomentumScrollEnd={(e) => handleScroll(e, HOURS, "hour")}
+              {...commonListProps}
+              initialScrollIndex={date.getHours()}
+            />
+          </View>
 
-        {/* İKİ NOKTA (:) */}
-        <View
-          className="items-center justify-start"
-          style={{ paddingTop: SPACER_HEIGHT }}
-        >
-           <View style={{ height: ITEM_HEIGHT, justifyContent: 'center', alignItems: 'center' }}>
+          {/* Ayıraç */}
+          <View style={styles.separatorContainer}>
             <Text
-                className="text-3xl font-semibold text-black dark:text-white"
-                style={{ includeFontPadding: false, lineHeight: ITEM_HEIGHT }}
+              style={[
+                styles.separatorText,
+                { color: isDark ? "#FFF" : "#000" },
+              ]}
             >
-                :
+              :
             </Text>
           </View>
-        </View>
 
-        {/* DAKİKA LİSTESİ */}
-        <View className="w-20 items-center">
-          <FlatList
-            ref={minuteListRef}
-            data={MINUTES}
-            keyExtractor={(item) => `m-${item}`}
-            renderItem={({ item }) =>
-              renderItem({
-                item,
-                selectedValue: date.getMinutes().toString().padStart(2, "0"),
-              })
-            }
-            snapToInterval={ITEM_HEIGHT}
-            decelerationRate="fast"
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-            onMomentumScrollEnd={(e) => handleScroll(e, MINUTES, "minute")}
-            ListHeaderComponent={renderSpacer}
-            ListFooterComponent={renderSpacer}
-            // getItemLayout KALDIRILDI!
-          />
+          {/* Dakika */}
+          <View style={styles.column}>
+            <FlatList
+              ref={minuteListRef}
+              data={MINUTES}
+              keyExtractor={(item) => `m-${item}`}
+              renderItem={({ item }) => (
+                <PickerItem
+                  item={item}
+                  isSelected={
+                    item === date.getMinutes().toString().padStart(2, "0")
+                  }
+                  activeColor={colors.main}
+                />
+              )}
+              onMomentumScrollEnd={(e) => handleScroll(e, MINUTES, "minute")}
+              {...commonListProps}
+              initialScrollIndex={date.getMinutes()}
+            />
+          </View>
         </View>
       </View>
     );
-  }
+  },
 );
+
+const styles = StyleSheet.create({
+  container: {
+    // RESPONSIVE YAPI:
+    // width: 'auto' diyerek içeriğe göre daralmasını sağlıyoruz.
+    // Ancak çok küçülmemesi için minWidth veriyoruz.
+    alignSelf: "center", // Ekranda ortala
+    minWidth: 140, // En az bu kadar (çok dar telefonlar için güvenli alan)
+    maxWidth: 200, // En fazla bu kadar (Tablette devasa olmasın)
+    width: "45%", // Ekranın %45'ini kapla (Responsive kısım)
+
+    borderRadius: 20,
+    overflow: "hidden",
+    alignItems: "center",
+  },
+  row: {
+    flexDirection: "row",
+    width: "100%",
+    justifyContent: "space-between", // Sütunları kenarlara değil ortaya yakın tutar
+    paddingHorizontal: 4, // Kenarlardan çok hafif boşluk
+  },
+  column: {
+    flex: 1, // Mevcut alanın yarısını al
+    alignItems: "center",
+  },
+  itemContainer: {
+    height: ITEM_HEIGHT,
+    justifyContent: "center",
+    alignItems: "center",
+    width: 50, // Sabit ve dar genişlik (Sayılar için yeterli)
+  },
+  itemText: {
+    textAlign: "center",
+    includeFontPadding: false,
+    textAlignVertical: "center",
+  },
+  separatorContainer: {
+    width: 10, // Çok dar ayıraç alanı
+    height: CONTAINER_HEIGHT, // Tüm yüksekliği kaplasın
+    justifyContent: "center",
+    alignItems: "center",
+    // Ayıracı tam ortaya (seçili alana) denk getirmek için padding
+    paddingTop: 2,
+  },
+  separatorText: {
+    fontSize: 20,
+    fontWeight: "600",
+    textAlignVertical: "center",
+  },
+  selectionOverlay: {
+    position: "absolute",
+    left: 10,
+    right: 10, // Kenarlardan 10px boşluk bırak
+    borderRadius: 10,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    zIndex: 0,
+  },
+});
 
 export default TimePicker;

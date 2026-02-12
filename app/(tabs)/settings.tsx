@@ -1,8 +1,11 @@
 import Switch from "@/components/ui/switch";
+import { removeAllAlarms } from "@/lib/alarm-service";
 import { getAllThemeColorNames, THEME_COLORS } from "@/lib/color-system";
 import { useSettingsStore } from "@/store/settings";
 import { Check, Moon, Sun } from "lucide-react-native";
+import { useState } from "react";
 import {
+  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -12,11 +15,67 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function SettingsScreen() {
-  const { language, theme, themeColor, setLanguage, setTheme, setThemeColor } =
-    useSettingsStore();
+  const {
+    language,
+    theme,
+    themeColor,
+    devMode,
+    setLanguage,
+    setTheme,
+    setThemeColor,
+    setDevMode,
+  } = useSettingsStore();
   const systemColorScheme = useColorScheme();
+  const [tapCount, setTapCount] = useState(0);
   const isDark =
     theme === "dark" || (theme === "auto" && systemColorScheme === "dark");
+
+  const handleDevModeTrigger = () => {
+    if (devMode) return;
+
+    setTapCount((prev) => {
+      const newCount = prev + 1;
+      if (newCount >= 7) {
+        setDevMode(true);
+        Alert.alert(
+          language === "tr" ? "Geliştirici Modu" : "Developer Mode",
+          language === "tr"
+            ? "Geliştirici modu etkinleştirildi!"
+            : "Developer mode enabled!",
+        );
+        return 0;
+      }
+      return newCount;
+    });
+  };
+
+  const handleClearAlarms = async () => {
+    Alert.alert(
+      language === "tr" ? "Alarmları Temizle" : "Clear Alarms",
+      language === "tr"
+        ? "Tüm alarmlar silinecek. Emin misiniz?"
+        : "All alarms will be deleted. Are you sure?",
+      [
+        {
+          text: language === "tr" ? "İptal" : "Cancel",
+          style: "cancel",
+        },
+        {
+          text: language === "tr" ? "Sil" : "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await removeAllAlarms();
+            Alert.alert(
+              language === "tr" ? "Başarılı" : "Success",
+              language === "tr"
+                ? "Tüm alarmlar temizlendi."
+                : "All alarms cleared.",
+            );
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <View className="flex-1 bg-gray-50 dark:bg-black">
@@ -255,6 +314,58 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
+
+          {/* Developer Mode Section */}
+          {devMode && (
+            <View className="mb-6">
+              <Text className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                {language === "tr" ? "Geliştirici" : "Developer"}
+              </Text>
+
+              <View className="bg-white dark:bg-zinc-900/50 border border-white/20 dark:border-white/5 rounded-3xl p-5 mb-3 gap-4">
+                <Pressable
+                  onPress={handleClearAlarms}
+                  className="flex-row items-center justify-between active:opacity-70"
+                >
+                  <Text className="text-base font-semibold text-red-500">
+                    {language === "tr"
+                      ? "Tüm Alarmları Temizle"
+                      : "Clear All Alarms"}
+                  </Text>
+                </Pressable>
+
+                <View className="h-px bg-gray-200 dark:bg-gray-700" />
+
+                <Pressable
+                  onPress={() => {
+                    // Navigate to alarm ringing screen for testing
+                    const router = require("expo-router").router;
+                    router.push({
+                      pathname: "/alarm-ringing",
+                      params: {
+                        title: "Test Alarm",
+                        sound: "default",
+                      },
+                    });
+                  }}
+                  className="flex-row items-center justify-between active:opacity-70"
+                >
+                  <Text className="text-base font-semibold text-blue-500 dark:text-blue-400">
+                    {language === "tr"
+                      ? "Alarm Ekranını Test Et"
+                      : "Test Alarm Screen"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {/* Hidden Trigger Area */}
+          <Pressable
+            onPress={handleDevModeTrigger}
+            className="h-20 w-full"
+            delayLongPress={5000} // Prevent accidental long press issues if any
+          />
         </ScrollView>
       </SafeAreaView>
     </View>

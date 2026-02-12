@@ -4,7 +4,7 @@ import {
   requestExactAlarmPermission,
 } from "@/lib/alarm-service";
 import { getThemeColors } from "@/lib/color-system";
-import { translations } from "@/lib/i18n";
+import { TranslationKey, translations } from "@/lib/i18n";
 import { Alarm, useAlarmsStore } from "@/store/alarms";
 import { useSettingsStore } from "@/store/settings";
 import clsx from "clsx";
@@ -229,7 +229,7 @@ export default function AddAlarmModal({
                     {/* Sound */}
                     <View className="flex-[2] bg-white dark:bg-[#1C1C1E] p-4 rounded-2xl border border-gray-100 dark:border-zinc-800 justify-between">
                       <Text className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 text-center">
-                        {language === "tr" ? "Zil Sesi" : "Sound"}
+                        {t.sound}
                       </Text>
                       <Pressable
                         onPress={() => setShowSoundPicker(true)}
@@ -239,7 +239,9 @@ export default function AddAlarmModal({
                           className="text-sm font-medium text-black dark:text-gray-200 capitalize"
                           numberOfLines={1}
                         >
-                          {sound}
+                          {t[
+                            `sound${sound.charAt(0).toUpperCase() + sound.slice(1)}` as TranslationKey
+                          ] || sound}
                         </Text>
                         <ChevronRight
                           size={16}
